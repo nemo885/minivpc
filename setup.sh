@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-bash "$(dirname "$0")/teardown.sh
+bash "$(dirname "$0")/teardown.sh"
 
 # шаг 1: namespaces
 for ns in public app db router; do
@@ -9,40 +9,28 @@ for ns in public app db router; do
 done
 
 # шаг 2: кабель public <-> router
-ip link add veth-pub type veth peer name veth-pub-r
-ip link set veth-pub netns public
-ip link set veth-pub-r netns router
+create_cable() {
+    local ns="$1"
+    local num="$2"
+    ip link add veth-${ns} type veth peer name veth-${ns}-r
+    ip link set veth-${ns} netns ${ns}
+    ip link set veth-${ns}-r netns router
 
-ip netns exec public ip addr add 10.50.1.2/24 dev veth-pub
-ip netns exec public ip link set veth-pub up
-ip netns exec public ip link set lo up
+    ip netns exec ${ns} ip addr add 10.50.${num}.2/24 dev veth-${ns}
+    ip netns exec ${ns} ip link set veth-${ns} up
+    ip netns exec ${ns} ip link set lo up
 
-ip netns exec router ip addr add 10.50.1.1/24 dev veth-pub-r
-ip netns exec router ip link set veth-pub-r up
+    ip netns exec router ip addr add 10.50.${num}.1/24 dev veth-${ns}-r
+    ip netns exec router ip link set veth-${ns}-r up
+
+}
+
 ip netns exec router ip link set lo up
 
-ip link add veth-app type veth peer name veth-app-r
-ip link set veth-app netns app
-ip link set veth-app-r netns router
-
-ip netns exec app ip addr add 10.50.2.2/24 dev veth-app
-ip netns exec app ip link set veth-app up
-ip netns exec app ip link set lo up
-
-ip netns exec router ip addr add 10.50.2.1/24 dev veth-app-r
-ip netns exec router ip link set veth-app-r up
-
-
-ip link add veth-db type veth peer name veth-db-r
-ip link set veth-db netns db
-ip link set veth-db-r netns router
-
-ip netns exec db ip addr add 10.50.3.2/24 dev veth-db
-ip netns exec db ip link set veth-db up
-ip netns exec db ip link set lo up
-
-ip netns exec router ip addr add 10.50.3.1/24 dev veth-db-r
-ip netns exec router ip link set veth-db-r up
+create_cable public 1
+create_cable app 2
+create_cable db 3
+    
 
 
 ip netns exec router sysctl -w net.ipv4.ip_forward=1
@@ -70,7 +58,7 @@ ip netns exec router ip link set veth-up-r up
 
 ip netns exec router ip route add default via 10.50.0.1
 
-ip netns exec router nft insert rule inet minivpc forward iifname "veth-pub-r" oifname "veth-up-r" counter accept
+ip netns exec router nft insert rule inet minivpc forward iifname "veth-public-r" oifname "veth-up-r" counter accept
 
 
 WAN=$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
